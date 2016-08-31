@@ -2337,7 +2337,7 @@ my $rcode = $1;
 while(1) {
 	$line = &read_http_connection($_[0]);
 	$line =~ tr/\r\n//d;
-	$line =~ /^(\S+):\s+(.*)$/ || last;
+	$line =~ /^(\S+):\s*(.*)$/ || last;
 	$header{lc($1)} = $2;
 	push(@headers, [ lc($1), $2 ]);
 	}
@@ -2907,12 +2907,12 @@ elsif ($ip = &to_ip6address($host)) {
 		if ($err) { $$err = $msg; return 0; }
 		else { &error($msg); }
 		}
-	if (!socket($fh, Socket6::PF_INET6(), SOCK_STREAM, $proto)) {
+	if (!socket($fh, PF_INET6(), SOCK_STREAM, $proto)) {
 		my $msg = "Failed to create IPv6 socket : $!";
 		if ($err) { $$err = $msg; return 0; }
 		else { &error($msg); }
 		}
-	my $addr = inet_pton(Socket6::AF_INET6(), $ip);
+	my $addr = inet_pton(AF_INET6(), $ip);
 	if (!connect($fh, pack_sockaddr_in6($port, $addr))) {
 		my $msg = "Failed to IPv6 connect to $host:$port : $!";
 		if ($err) { $$err = $msg; return 0; }
@@ -3042,11 +3042,11 @@ else {
 	# Perform IPv6 DNS lookup
 	my $inaddr;
 	(undef, undef, undef, $inaddr) =
-	    getaddrinfo($_[0], undef, Socket6::AF_INET6(), SOCK_STREAM);
+	    getaddrinfo($_[0], undef, AF_INET6(), SOCK_STREAM);
 	return undef if (!$inaddr);
 	my $addr;
 	(undef, $addr) = unpack_sockaddr_in6($inaddr);
-	return inet_ntop(Socket6::AF_INET6(), $addr);
+	return inet_ntop(AF_INET6(), $addr);
 	}
 }
 
@@ -3059,8 +3059,7 @@ sub to_hostname
 {
 my ($addr) = @_;
 if (&check_ip6address($addr) && &supports_ipv6()) {
-	return gethostbyaddr(inet_pton(Socket6::AF_INET6(), $addr),
-			     Socket6::AF_INET6());
+	return gethostbyaddr(inet_pton(AF_INET6(), $addr), AF_INET6());
 	}
 else {
 	return gethostbyaddr(inet_aton($addr), AF_INET);
@@ -5848,42 +5847,77 @@ if ($miniserv::page_capture_out) {
 	$miniserv::page_capture_out = undef;
 	}
 
+# Convert params to a format usable by parse_webmin_log
+my %params;
+foreach my $k (keys %{$_[3]}) {
+	my $v = $_[3]->{$k};
+	if (ref($v) eq 'ARRAY') {
+		$params{$k} = join("\0", @$v);
+		}
+	else {
+		$params{$k} = $v;
+		}
+	}
+
+# Construct description if one is needed
+my $logemail = $gconfig{'logemail'} &&
+	       (!$gconfig{'logmodulesemail'} ||
+	        &indexof($m, split(/\s+/, $gconfig{'logmodulesemail'})) >= 0) &&
+	       &foreign_check("mailboxes");
+my $msg = undef;
+my %minfo = &get_module_info($m);
+if ($logemail || $gconfig{'logsyslog'}) {
+	my $mod = &get_module_name();
+	my $mdir = module_root_directory($mod);
+	if (&foreign_check("webminlog")) {
+		&foreign_require("webminlog");
+		my $act = &webminlog::parse_logline($line);
+		$msg = &webminlog::get_action_description($act, 0);
+		$msg =~ s/<[^>]*>//g;	# Remove tags
+		}
+	$msg ||= "$_[0] $_[1] $_[2]";
+	}
+
 # Log to syslog too
 if ($gconfig{'logsyslog'}) {
 	eval 'use Sys::Syslog qw(:DEFAULT setlogsock);
 	      openlog(&get_product_name(), "cons,pid,ndelay", "daemon");
 	      setlogsock("inet");';
 	if (!$@) {
-		# Syslog module is installed .. try to convert to a
-		# human-readable form
-		my $msg;
-		my $mod = &get_module_name();
-		my $mdir = module_root_directory($mod);
-		if (-r "$mdir/log_parser.pl") {
-			&foreign_require($mod, "log_parser.pl");
-			my %params;
-			foreach my $k (keys %{$_[3]}) {
-				my $v = $_[3]->{$k};
-				if (ref($v) eq 'ARRAY') {
-					$params{$k} = join("\0", @$v);
-					}
-				else {
-					$params{$k} = $v;
-					}
-				}
-			$msg = &foreign_call($mod, "parse_webmin_log",
-				$remote_user, $script_name,
-				$_[0], $_[1], $_[2], \%params);
-			$msg =~ s/<[^>]*>//g;	# Remove tags
-			}
-		elsif ($_[0] eq "_config_") {
-			my %wtext = &load_language("webminlog");
-			$msg = $wtext{'search_config'};
-			}
-		$msg ||= "$_[0] $_[1] $_[2]";
-		my %info = &get_module_info($m);
-		eval { syslog("info", "%s", "[$info{'desc'}] $msg"); };
+		eval { syslog("info", "%s", "[$minfo{'desc'}] $msg"); };
 		}
+	}
+
+# Log to email, if enabled and for this module
+if ($logemail) {
+	# Construct an email message
+	&foreign_require("mailboxes");
+	my $mdesc;
+	if ($m && $m ne "global") {
+		$mdesc = $minfo{'desc'} || $m;
+		}
+	my $body = $text{'log_email_desc'}."\n\n";
+	$body .= &text('log_email_mod', $m || "global")."\n";
+	if ($mdesc) {
+		$body .= &text('log_email_moddesc', $mdesc)."\n";
+		}
+	$body .= &text('log_email_time', &make_date(time()))."\n";
+	$body .= &text('log_email_system', &get_display_hostname())."\n";
+	$body .= &text('log_email_user', $remote_user)."\n";
+	$body .= &text('log_email_remote', $_[7] || $ENV{'REMOTE_HOST'})."\n";
+	$body .= &text('log_email_script', $script_name)."\n";
+	if ($main::session_id) {
+		$body .= &text('log_email_session', $main::session_id)."\n";
+		}
+	$body .= "\n";
+	$body .= $msg."\n";
+	&mailboxes::send_text_mail(
+		&mailboxes::get_from_address(),
+		$gconfig{'logemail'},
+		undef,
+		$mdesc ? &text('log_email_subject', $mdesc)
+		       : $text{'log_email_global'},
+		$body);
 	}
 }
 
@@ -7347,6 +7381,9 @@ if ($ssl) {
 		return $error if ($error);
 		}
 	Net::SSLeay::set_fd($rv->{'ssl_con'}, fileno($rv->{'fh'}));
+	eval {
+		Net::SSLeay::set_tlsext_host_name($rv->{'ssl_con'}, $host);
+		};
 	Net::SSLeay::connect($rv->{'ssl_con'}) ||
 		return "SSL connect() failed";
 	if ($certreqs) {

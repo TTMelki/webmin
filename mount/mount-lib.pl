@@ -304,7 +304,7 @@ my %donedevno;
 # Get list of zone pools
 my %zpools = ( 'zones' => 1, 'zroot' => 1 );
 if (&has_command("zpool")) {
-	my @out = &backquote_command("zpool list -p");
+	my @out = &backquote_command("zpool list -P");
 	foreach my $l (@out) {
 		if (/^(\S+)\s+(\d+)\s+(\d+)\s+(\d+)/) {
 			$zpools{$1} = [ $2 / 1024, $4 / 1024 ];
@@ -336,6 +336,10 @@ foreach my $m (@mounted) {
 		my @st = stat($m->[0]);
 		if (@st && $donedevno{$st[0]}++) {
 			# Don't double-count same filesystem by device number
+			next;
+			}
+		if ($m->[1] eq "/dev/fuse") {
+			# Skip fuse user-space filesystem mounts
 			next;
 			}
 		# Get the size - for ZFS mounts, this comes from the underlying

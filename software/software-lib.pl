@@ -234,6 +234,7 @@ if ($rel1 ne "" && $rel2 ne "" && $config{'package_system'} eq 'rpm') {
 	}
 local @sp1 = split(/[\.\-\+\~]/, $_[0]);
 local @sp2 = split(/[\.\-\+\~]/, $_[1]);
+local $tmp;
 for(my $i=0; $i<@sp1 || $i<@sp2; $i++) {
 	local $v1 = $sp1[$i];
 	local $v2 = $sp2[$i];
@@ -262,10 +263,15 @@ for(my $i=0; $i<@sp1 || $i<@sp2; $i++) {
 				}
 			}
 		}
-	elsif ($v1 =~ /^([^0-9]+)(\d+)$/ && $v2 =~ /^([^0-9]+)(\d+)$/ &&
-	       $1 eq $2) {
+	elsif ($v1 =~ /^([^0-9]+)(\d+)$/ && ($tmp = $1) &&
+	       $v2 =~ /^([^0-9]+)(\d+)$/ &&
+	       $tmp eq $1) {
 		# Strings that are the same followed by numeric
-		$comp = $v1 <=> $v2;
+		$v1 =~ /^([^0-9]+)(\d+)$/;
+		local $num1 = $2;
+		$v2 =~ /^([^0-9]+)(\d+)$/;
+		local $num2 = $2;
+		$comp = $num1 <=> $num2;
 		}
 	elsif ($v1 =~ /^\d+$/ && $v2 !~ /^\d+$/) {
 		# Numeric compared to non-numeric - numeric is always higher

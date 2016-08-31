@@ -676,8 +676,8 @@ elsif (!$olddir && $newdir) {
 # Update the line numbers and filenames in a list of directives
 sub recursive_set_lines_files
 {
-local ($dirs, $line, $file) = @_;
-foreach my $d (@$dirs) {
+my ($dirs, $line, $file) = @_;
+foreach my $dir (@$dirs) {
 	$dir->{'line'} = $line;
 	$dir->{'file'} = $file;
 	if ($dir->{'type'}) {
@@ -1334,7 +1334,8 @@ sub lock_apache_files
 {
 local $conf = &get_config();
 local $f;
-foreach $f (&unique(map { $_->{'file'} } @$conf)) {
+@main::locked_apache_files = &unique(map { $_->{'file'} } @$conf);
+foreach $f (@main::locked_apache_files) {
 	&lock_file($f);
 	}
 }
@@ -1343,9 +1344,10 @@ sub unlock_apache_files
 {
 local $conf = &get_config();
 local $f;
-foreach $f (&unique(map { $_->{'file'} } @$conf)) {
+foreach $f (@main::locked_apache_files) {
 	&unlock_file($f);
 	}
+@main::locked_apache_files = ( );
 }
 
 # directive_lines(directive, ...)

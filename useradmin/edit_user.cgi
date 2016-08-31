@@ -7,13 +7,22 @@ use Time::Local;
 &ReadParse();
 
 # Show header and get the user
+@ulist = &list_users();
 $n = $in{'user'};
-if ($n eq "") {
+if ($n eq '') {
+	# Creating a new user
 	$access{'ucreate'} || &error($text{'uedit_ecreate'});
 	&ui_print_header(undef, $text{'uedit_title2'}, "", "create_user");
+	if ($in{'clone'} ne '') {
+		($clone_hash) = grep { $_->{'user'} eq $in{'clone'} } @ulist;
+		$clone_hash || &error($text{'uedit_egone'});
+		%uinfo = %$clone_hash;
+		&can_edit_user(\%access, \%uinfo) || &error($text{'uedit_eedit'});
+		$uinfo{'user'} = '';
+		}
 	}
 else {
-	@ulist = &list_users();
+	# Editing an existing one
 	($uinfo_hash) = grep { $_->{'user'} eq $n } @ulist;
 	$uinfo_hash || &error($text{'uedit_egone'});
 	%uinfo = %$uinfo_hash;
@@ -164,7 +173,8 @@ print &ui_table_row(&hlink($text{'shell'}, "shell"),
 	   ($shells ? "" : &ui_filebox("othersh", undef, 40, 1)));
 
 # Get the password, generate random if needed
-$pass = $n ne "" ? $uinfo{'pass'} : $config{'lock_string'};
+$pass = $in{'clone'} ne "" ? $uinfo{'pass'} :
+	$n ne "" ? $uinfo{'pass'} : $config{'lock_string'};
 if ($n eq "" && $config{'random_password'}) {
 	$random_password = &generate_random_password();
 	}
@@ -438,6 +448,9 @@ if ($config{'secmode'} != 1) {
 	foreach $g (@glist) {
 		@mems = split(/,/ , $g->{'members'});
 		$ismem = &indexof($uinfo{'user'}, @mems) >= 0;
+		if ($in{'clone'} ne '') {
+			$ismem ||= &indexof($in{'clone'}, @mems) >= 0;
+			}
 		if ($n eq "") {
 			$ismem = 1 if (&indexof($g->{'group'}, @defsecs) >= 0);
 			}
@@ -595,6 +608,11 @@ if ($n ne "") {
 			push(@buts, [ "switch", $text{'uedit_swit'}, undef, 0,
 				"onClick='form.target=\"_blank\"'" ]);
 			}
+		}
+
+	# Clone user
+	if ($access{'ucreate'}) {
+		push(@buts, [ "clone", $text{'uedit_clone'} ]);
 		}
 
 	# Delete user

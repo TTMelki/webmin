@@ -82,6 +82,9 @@ sub get_paths {
 
     # Initiate per user config
     $confdir = "$remote_user_info[7]/.filemin";
+    if(!-e $confdir) {
+        mkdir $confdir or &error("$text{'error_creating_conf'}: $!");
+    }
     if(!-e "$confdir/.config") {
         &read_file_cached("$module_root_directory/defaultuconf", \%userconfig);
     } else {
@@ -115,8 +118,6 @@ sub print_errors {
 sub print_interface {
     # Some vars for "upload" functionality
     local $upid = time().$$;
-    local @remote_user_info = getpwnam($remote_user);
-    local $uid = @remote_user_info[2];
     $bookmarks = get_bookmarks();
     @allowed_for_edit = split(/\s+/, $access{'allowed_for_edit'});
     %allowed_for_edit = map { $_ => 1} @allowed_for_edit;
@@ -309,6 +310,8 @@ sub print_interface {
             if (   ( index( $type, "application-zip" ) != -1 && has_command('unzip') )
                 || ( index( $type, "application-x-7z-compressed" ) != -1 && has_command('7z') )
                 || ( index( $type, "application-x-rar" ) != -1           && has_command('unrar') )
+                || ( index( $type, "application-x-rpm" ) != -1 && has_command('rpm2cpio') && has_command('cpio') )
+                || ( index( $type, "application-x-deb" ) != -1 && has_command('dpkg') )
                 || ((      index( $type, "x-compressed-tar" ) != -1
                         || index( $type, "-x-tar" ) != -1
                         || ( index( $type, "-x-bzip" ) != -1 && has_command('bzip2') )

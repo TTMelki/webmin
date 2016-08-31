@@ -466,9 +466,9 @@ if ($config{'bind'}) {
 	if (&check_ip6address($config{'bind'})) {
 		# IP is v6
 		$use_ipv6 || die "Cannot bind to $config{'bind'} without IPv6";
-		push(@sockets, [ inet_pton(Socket6::AF_INET6(),$config{'bind'}),
+		push(@sockets, [ inet_pton(AF_INET6(),$config{'bind'}),
 				 $config{'port'},
-				 Socket6::PF_INET6() ]);
+				 PF_INET6() ]);
 		}
 	else {
 		# IP is v4
@@ -483,7 +483,7 @@ else {
 	if ($use_ipv6) {
 		# Also IPv6
 		push(@sockets, [ in6addr_any(), $config{'port'},
-				 Socket6::PF_INET6() ]);
+				 PF_INET6() ]);
 		}
 	}
 foreach $s (split(/\s+/, $config{'sockets'})) {
@@ -502,7 +502,7 @@ foreach $s (split(/\s+/, $config{'sockets'})) {
 				 PF_INET() ]);
 		if ($use_ipv6) {
 			push(@sockets, [ in6addr_any(), $1,
-					 Socket6::PF_INET6() ]);
+					 PF_INET6() ]);
 			}
 		}
 	elsif ($s =~ /^(\S+):(\d+)$/) {
@@ -510,9 +510,9 @@ foreach $s (split(/\s+/, $config{'sockets'})) {
 		my ($ip, $port) = ($1, $2);
 		if (&check_ip6address($ip)) {
 			$use_ipv6 || die "Cannot bind to $ip without IPv6";
-			push(@sockets, [ inet_pton(Socket6::AF_INET6(),
+			push(@sockets, [ inet_pton(AF_INET6(),
 						   $ip),
-					 $port, Socket6::PF_INET6() ]);
+					 $port, PF_INET6() ]);
 			}
 		else {
 			push(@sockets, [ inet_aton($ip), $port,
@@ -527,9 +527,9 @@ foreach $s (split(/\s+/, $config{'sockets'})) {
 	elsif (($s =~ /^([0-9a-f\:]+):\*$/ || $s =~ /^([0-9a-f\:]+)$/) &&
 	       $use_ipv6) {
 		# Listen on the main port on another IPv6 address
-		push(@sockets, [ inet_pton(Socket6::AF_INET6(), $1),
+		push(@sockets, [ inet_pton(AF_INET6(), $1),
 				 $sockets[0]->[1],
-				 Socket6::PF_INET6() ]);
+				 PF_INET6() ]);
 		}
 	}
 
@@ -782,7 +782,7 @@ while(1) {
 			local ($user, $ltime, $lip) =
 				split(/\s+/, $sessiondb{$s});
 			if ($time_now - $ltime > 7*24*60*60) {
-				&run_logout_script($s, $user);
+				&run_logout_script($s, $user, undef, undef);
 				&write_logout_utmp($user, $lip);
 				if ($use_syslog && $user) {
 					syslog("info", "%s",
@@ -1076,6 +1076,10 @@ while(1) {
 						# wrong IP address
 						print $outfd "3 $ip\n";
 						}
+					elsif ($user =~ /^\!/) {
+						# Logged out session
+						print $outfd "0 0\n";
+						}
 					else {
 						# Session is OK
 						print $outfd "2 $user\n";
@@ -1101,9 +1105,11 @@ while(1) {
 				local $skey = $sessiondb{$session_id} ?
 						$session_id : 
 						&hash_session_id($session_id);
-				local @sdb = split(/\s+/, $sessiondb{$skey});
-				print $outfd $sdb[0],"\n";
-				delete($sessiondb{$skey});
+				local ($user, $ltime, $ip) =
+					split(/\s+/, $sessiondb{$skey});
+				$user =~ s/^\!//;
+				print $outfd $user,"\n";
+				$sessiondb{$skey} = "!$user $ltime $ip";
 				}
 			elsif ($inline =~ /^pamstart\s+(\S+)\s+(\S+)\s+(.*)/) {
 				# Starting a new PAM conversation
@@ -1713,10 +1719,14 @@ if ($config{'userfile'}) {
 		else {
 			# Validate the user
 			if ($in{'user'} =~ /\r|\n|\s/) {
+				&run_failed_script($in{'user'}, 'baduser',
+						   $loghost, $localip);
 				&http_error(500, "Invalid username",
 				    "Username contains invalid characters");
 				}
 			if ($in{'pass'} =~ /\r|\n/) {
+				&run_failed_script($in{'user'}, 'badpass',
+						   $loghost, $localip);
 				&http_error(500, "Invalid password",
 				    "Password contains invalid characters");
 				}
@@ -1729,6 +1739,8 @@ if ($config{'userfile'}) {
 				$err = &validate_twofactor(
 					$wvu, $in{'twofactor'});
 				if ($err) {
+					&run_failed_script($vu, 'twofactor',
+							   $loghost, $localip);
 					$twofactor_msg = $err;
 					$vu = undef;
 					}
@@ -2928,13 +2940,13 @@ foreach $i (@_) {
 		# Lookup IPv6 address
 		local ($inaddr, $addr);
 		(undef, undef, undef, $inaddr) =
-		    getaddrinfo($i, undef, Socket6::AF_INET6(), SOCK_STREAM);
+		    getaddrinfo($i, undef, AF_INET6(), SOCK_STREAM);
 		if ($inaddr) {
 			push(@rv, undef);
 			}
 		else {
 			(undef, $addr) = unpack_sockaddr_in6($inaddr);
-			push(@rv, inet_ntop(Socket6::AF_INET6(), $addr));
+			push(@rv, inet_ntop(AF_INET6(), $addr));
 			}
 		}
 	}
@@ -2947,8 +2959,8 @@ sub to_hostname
 {
 local ($addr) = @_;
 if (&check_ip6address($_[0])) {
-	return gethostbyaddr(inet_pton(Socket6::AF_INET6(), $addr),
-			     Socket6::AF_INET6());
+	return gethostbyaddr(inet_pton(AF_INET6(), $addr),
+			     AF_INET6());
 	}
 else {
 	return gethostbyaddr(inet_aton($addr), AF_INET);
@@ -3814,7 +3826,7 @@ sub get_address_ip
 local ($sn, $ipv6) = @_;
 if ($ipv6) {
 	local ($p, $b) = unpack_sockaddr_in6($sn);
-	return ($b, inet_ntop(Socket6::AF_INET6(), $b), $p);
+	return ($b, inet_ntop(AF_INET6(), $b), $p);
 	}
 else {
 	local ($p, $b) = unpack_sockaddr_in($sn);
@@ -3833,7 +3845,7 @@ if (!$get_socket_name_cache{$myaddr}) {
 	local $myname;
 	if (!$config{'no_resolv_myname'}) {
 		$myname = gethostbyaddr($mybin,
-					$ipv6 ? Socket6::AF_INET6() : AF_INET);
+					$ipv6 ? AF_INET6() : AF_INET);
 		}
 	$myname ||= $myaddr;
 	$get_socket_name_cache{$myaddr} = $myname;
@@ -3864,6 +3876,22 @@ if ($config{'logout_script'}) {
 	$SIG{'ALRM'} = sub { die "timeout" };
 	eval {
 		system($config{'logout_script'}.
+		       " ".join(" ", map { quotemeta($_) || '""' } @_).
+		       " >/dev/null 2>&1 </dev/null");
+		};
+	alarm(0);
+	}
+}
+
+# run_failed_script(username, reason-code, remoteip, localip)
+sub run_failed_script
+{
+if ($config{'failed_script'}) {
+	$_[0] =~ s/\r|\n/ /g;
+	alarm(5);
+	$SIG{'ALRM'} = sub { die "timeout" };
+	eval {
+		system($config{'failed_script'}.
 		       " ".join(" ", map { quotemeta($_) || '""' } @_).
 		       " >/dev/null 2>&1 </dev/null");
 		};
@@ -4053,6 +4081,8 @@ elsif ($ok && $expired &&
        ($config{'passwd_mode'} == 2 || $expired == 2)) {
 	# Login was ok, but password has expired or was temporary. Need
 	# to force display of password change form.
+	&run_failed_script($authuser, 'expiredpass',
+			   $loghost, $localip);
 	$validated = 1;
 	$authuser = undef;
 	$querystring = "&user=".&urlize($vu).
@@ -4070,6 +4100,9 @@ elsif ($ok && $expired &&
 else {
 	# Login failed, or password has expired. The login form will be
 	# displayed again by later code
+	&run_failed_script($vu, $handle_login ? 'wronguser' :
+				$expired ? 'expiredpass' : 'wrongpass',
+			   $loghost, $localip);
 	$failed_user = $vu;
 	$request_uri = $in{'page'};
 	$already_session_id = undef;
@@ -5952,7 +5985,7 @@ if (length($addr) == 4 || !$use_ipv6) {
 	return inet_ntoa($addr);
 	}
 else {
-	return Socket6::inet_ntop(Socket6::AF_INET6(), $addr);
+	return inet_ntop(AF_INET6(), $addr);
 	}
 }
 

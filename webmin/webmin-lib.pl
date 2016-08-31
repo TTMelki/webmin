@@ -69,6 +69,7 @@ our @debug_what_events = ( 'start', 'read', 'write', 'ops', 'procs', 'diff', 'cm
 
 our $record_login_cmd = "$config_directory/login.pl";
 our $record_logout_cmd = "$config_directory/logout.pl";
+our $record_failed_cmd = "$config_directory/failed.pl";
 
 our $strong_ssl_ciphers = "ECDHE-RSA-AES256-SHA384:AES256-SHA256:AES256-SHA256:RC4:HIGH:MEDIUM:+TLSv1:+TLSv1.1:+TLSv1.2:!MD5:!ADH:!aNULL:!eNULL:!NULL:!DH:!ADH:!EDH:!AESGCM";
 our $pfs_ssl_ciphers = "EECDH+AES:EDH+AES:-SHA1:EECDH+RC4:EDH+RC4:RC4-SHA:EECDH+AES256:EDH+AES256:AES256-SHA:!aNULL:!eNULL:!EXP:!LOW:!MD5";
@@ -524,10 +525,11 @@ else {
 		closedir(DIR);
 		}
 
-	my $type;
-	open(TYPE, "$mdir/install-type");
-	chop($type = <TYPE>);
-	close(TYPE);
+	my $type = '';
+	if (open(TYPE, "$mdir/install-type")) {
+		chop($type = <TYPE>);
+		close(TYPE);
+		}
 
 	# Run the module's uninstall script
 	if (&check_os_support(\%minfo) &&
@@ -1968,7 +1970,7 @@ my $conf = &build_ssl_config(\@cns);
 my $out = &backquote_logged(
 	"$cmd req -newkey rsa:$size -x509 -sha256 -nodes -out $ctemp -keyout $ktemp ".
 	"-days ".quotemeta($in{'days'})." -subj ".quotemeta($subject)." ".
-	"-config $conf -reqexts v3_req 2>&1");
+	"-config $conf -reqexts v3_req -utf8 2>&1");
 if (!-r $ctemp || !-r $ktemp || $?) {
 	return $text{'newkey_essl'}."<br>"."<pre>".&html_escape($out)."</pre>";
 	}
@@ -2161,20 +2163,24 @@ if (!$found_copy) {
 return $temp;
 }
 
-# generate_ssl_csr(keyfile, country, state, city, org, orgunit, cname|&cnames, email)
+# generate_ssl_csr(keyfile, country, state, city, org, orgunit, cname|&cnames,
+# 		   email, ["sha1"|"sha2"])
 # Generates a new CSR, and returns either 1 and the temp file path, or 0 and
 # an error message
 sub generate_ssl_csr
 {
-my ($ktemp, $country, $state, $city, $org, $orgunit, $cn, $email) = @_;
+my ($ktemp, $country, $state, $city, $org, $orgunit, $cn, $email, $ctype) = @_;
+$ctype ||= "sha2";
 &foreign_require("acl");
 my $ctemp = &transname();
 my $cmd = &acl::get_ssleay();
 my $subject = &build_ssl_subject($country, $state, $city, $org, $orgunit, $cn,$email);
 my $conf = &build_ssl_config($cn);
+my $ctypeflag = $ctype eq "sha2" ? "-sha256" : "";
 my $out = &backquote_command(
-	"$cmd req -new -key $ktemp -out $ctemp -sha256 ".
-	"-subj ".quotemeta($subject)." -config $conf -reqexts v3_req 2>&1");
+	"$cmd req -new -key $ktemp -out $ctemp $ctypeflag ".
+	"-subj ".quotemeta($subject)." -config $conf -reqexts v3_req ".
+	"-utf8 2>&1");
 if (!-r $ctemp || $?) {
 	return (0, $out);
 	}

@@ -5,12 +5,7 @@ use lib './lib';
 
 &ReadParse();
 
-switch_to_remote_user();
-
-$confdir = "$remote_user_info[7]/.filemin";
-if(!-e $confdir) {
-    mkdir $confdir or &error("$text{'error_creating_conf'}: $!");
-}
+&get_paths();
 
 if(!-e "$confdir/.bookmarks") {
     utime time, time, "$configdir/.bookmarks";
